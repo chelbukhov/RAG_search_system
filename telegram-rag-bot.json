@@ -1,0 +1,437 @@
+{
+  "name": "telegram-rag-bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "0ef9f7c3-d4a3-4d03-a70d-6699bfde2264",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        688,
+        448
+      ],
+      "webhookId": "e9fb9d7e-a7e5-4872-8c45-affb3f79213b",
+      "credentials": {
+        "telegramApi": {
+          "id": "SablHPtMpLlFWjQx",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "id": "48419c98-7e33-4077-88a9-f53b37bea517",
+      "name": "Typing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1168,
+        448
+      ],
+      "webhookId": "c32acb4c-f914-4750-b734-8f1f53a116f4",
+      "credentials": {
+        "telegramApi": {
+          "id": "SablHPtMpLlFWjQx",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "start-cond",
+              "leftValue": "={{ $('Telegram Trigger').item.json.message.text }}",
+              "rightValue": "/start",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "62d32f5a-874f-4627-8e41-36ae4f9feb65",
+      "name": "Is Start?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://rag:8000/ask",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ question: $json.question ?? $('Telegram Trigger').item.json.message.text, telegram_id: $('Telegram Trigger').item.json.message.from.id, use_rerank: false }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "6dcca13f-a22a-4955-9b4a-4d4e8c512db4",
+      "name": "Ask RAG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const answer = $json.answer || 'Не удалось получить ответ от RAG-сервиса.';\nconst sources = $json.sources || [];\n\nlet text = answer;\nconst links = sources.filter(s => s.link).map(s => ({ link: s.link }));\nif (links.length > 0) {\n  text += '\\n\\n📽 Источники:';\n  for (let i = 0; i < links.length; i++) {\n    text += `\\n${i + 1}. ${links[i].link}`;\n  }\n}\n\nreturn [{ json: { text, chatId: $('Telegram Trigger').first().json.message.chat.id } }];"
+      },
+      "id": "d34b5074-f53c-413d-beec-4c794b65e473",
+      "name": "Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "e191b471-4bc8-4a50-870c-69285ab9e7e2",
+      "name": "Send Answer",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2000,
+        592
+      ],
+      "webhookId": "ff4b874f-88f4-40ee-91dc-c760018c2659",
+      "credentials": {
+        "telegramApi": {
+          "id": "SablHPtMpLlFWjQx",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const from = $('Telegram Trigger').first().json.message.from || {};\nconst chat = $('Telegram Trigger').first().json.message.chat || {};\n\nreturn [{\n  json: {\n    telegram_id: from.id ?? null,\n    username: from.username ?? null,\n    first_name: from.first_name ?? null,\n    last_name: from.last_name ?? null,\n    language_code: from.language_code ?? null,\n    chatId: chat.id ?? null,\n  },\n}];"
+      },
+      "id": "88244a82-0002-4039-b98c-5328405dad94",
+      "name": "Prepare User",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": "public",
+        "table": "users",
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "telegram_id",
+        "valueToMatchOn": "={{ $json.telegram_id }}",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "telegram_id",
+              "value": "={{ $json.telegram_id }}"
+            },
+            {
+              "column": "username",
+              "value": "={{ $json.username }}"
+            },
+            {
+              "column": "first_name",
+              "value": "={{ $json.first_name }}"
+            },
+            {
+              "column": "last_name",
+              "value": "={{ $json.last_name }}"
+            },
+            {
+              "column": "language_code",
+              "value": "={{ $json.language_code }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c584cdff-8409-470e-9180-1bc5ddfcc56f",
+      "name": "Upsert User",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        192
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "Q9SJm1gnf1iRUzxN",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "1fad30de-7c67-4fad-990d-cc1ed9a158aa",
+              "leftValue": "={{ $('Telegram Trigger').item.json.message.voice.file_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        880,
+        432
+      ],
+      "id": "de68d764-2553-4767-b31c-3c178c12f331",
+      "name": "If voice"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Prepare User').first().json.chatId }}",
+        "text": "Привет! Я — бот-ассистент по видеороликам Школы осознанного здоровья. Задай мне вопрос по содержанию видео, и я отвечу, опираясь на его расшифровку, а внизу приложу ссылки на источник.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "0cd2d070-e9ad-430b-a7c4-521a21e94720",
+      "name": "Send Start Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2000,
+        192
+      ],
+      "webhookId": "23cb77ae-3494-4aa0-8e85-645649218648",
+      "credentials": {
+        "telegramApi": {
+          "id": "SablHPtMpLlFWjQx",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://stt:9000/transcribe",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ file_id: $('Telegram Trigger').item.json.message.voice.file_id }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a7c3d4e1-9f21-4c77-9b3e-55a1e2f3d4b5",
+      "name": "Transcribe Voice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = ($json.text || '').trim();\nreturn [{ json: { question: text } }];"
+      },
+      "id": "b8d4e5f2-0a32-4d88-aa4f-66b2f304e5c6",
+      "name": "Prepare Voice Question",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        208
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "If voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Typing": {
+      "main": [
+        [
+          {
+            "node": "Is Start?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Start?": {
+      "main": [
+        [
+          {
+            "node": "Prepare User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare User": {
+      "main": [
+        [
+          {
+            "node": "Upsert User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert User": {
+      "main": [
+        [
+          {
+            "node": "Send Start Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask RAG": {
+      "main": [
+        [
+          {
+            "node": "Format Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If voice": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Typing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice": {
+      "main": [
+        [
+          {
+            "node": "Prepare Voice Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Voice Question": {
+      "main": [
+        [
+          {
+            "node": "Ask RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "iu3YmZNW7FXZmuTA",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "63ab1d45-84bf-4ab7-8b88-f9c3b32cfdc9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fcfffce1c44f020473f47e23a562bcedd364deeee8fed8d16f6f004b0a91758b"
+  },
+  "nodeGroups": [],
+  "id": "5Cc51C4SXpGcgmpk",
+  "tags": []
+}

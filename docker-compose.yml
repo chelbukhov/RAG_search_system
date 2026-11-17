@@ -1,0 +1,84 @@
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - ACME_AGREE=true
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    # порт 5678 не публикуем наружу — доступ только через Caddy (HTTPS)
+    expose:
+      - "5678"
+    environment:
+      - N8N_HOST=n8n.chelbukhov.ru
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      # Публичный URL для webhook'ов (Telegram принимает только 80/88/443/8443)
+      - N8N_WEBHOOK_URL=https://n8n.chelbukhov.ru/
+      - N8N_SECURE_COOKIE=true
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=UTC
+      - TZ=UTC
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_USER_FOLDER=/home/node/.n8n
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  rag:
+    build: ./rag
+    container_name: rag
+    restart: unless-stopped
+    # порт 8000 наружу НЕ публикуем — доступ только изнутри Docker-сети (n8n)
+    expose:
+      - "8000"
+    env_file:
+      - ./rag/.env
+    volumes:
+      - rag_hf_cache:/app/.cache/huggingface
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    # 5432 только на loopback — доступ снаружи только через SSH-туннель
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-bot_db}
+      - POSTGRES_USER=${POSTGRES_USER:-bot}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-bot_secret}
+      - TZ=UTC
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  stt:
+    build: ./stt
+    container_name: stt
+    restart: unless-stopped
+    # порт 9000 наружу НЕ публикуем — доступ только изнутри Docker-сети (n8n)
+    expose:
+      - "9000"
+    env_file:
+      - ./stt/.env
+    volumes:
+      - stt_whisper_cache:/app/.cache/huggingface
+
+volumes:
+  n8n_data:
+  caddy_data:
+  caddy_config:
+  rag_hf_cache:
+  postgres_data:
+  stt_whisper_cache:
